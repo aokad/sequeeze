@@ -1671,32 +1671,18 @@ int stk_fqchk(int argc, char *argv[])
 }
 
 /* binning base-quality */
-int stk_squeeze(int argc, char *argv[])
+int sequeeze(gzFile fp, char *bin_quality, char *prefix)
 {
-	gzFile fp;
 	kseq_t *seq, last;
-	char *prefix = 0;
 	uint64_t n = 1;
 
 	char base_quality[] = "!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJ";
-	char bin_quality[] = "!!''''''''000000000077777<<<<<BBBBBFFFFFII";
+	//char bin_quality[] = "!!''''''''000000000077777<<<<<BBBBBFFFFFII";
 
-	if (argc == 1 && isatty(fileno(stdin))) {
-		fprintf(stderr, "Usage: seqtk rename <in.fq> [prefix]\n");
-		return 1;
-	}
-	fp = argc > 1 && strcmp(argv[1], "-")? gzopen(argv[1], "r") : gzdopen(fileno(stdin), "r");
-	if (fp == 0) {
-		fprintf(stderr, "[E::%s] failed to open the input file/stream.\n", __func__);
-		return 1;
-	}
 	seq = kseq_init(fp);
-	if (argc > 2) prefix = argv[2];
 
 	memset(&last, 0, sizeof(kseq_t));
 	while (kseq_read(seq) >= 0) {
-	
-	/* ------------------------ */
 		int i;
 		for (i = 0; i < seq->qual.l; ++i) {
 			char *p = strchr(base_quality, seq->qual.s[i]);
@@ -1706,7 +1692,6 @@ int stk_squeeze(int argc, char *argv[])
 			}
 			seq->qual.s[i] = bin_quality[pos];
 		}
-	/* ------------------------ */
 		if (last.name.l) {
 			kstring_t *p = &last.name, *q = &seq->name;
 			int is_diff;
@@ -1734,6 +1719,98 @@ int stk_squeeze(int argc, char *argv[])
 	return 0;
 }
 
+int binning(gzFile fp, char *bin_quality)
+{
+	kseq_t *seq, last;
+	uint64_t n = 1;
+
+	char base_quality[] = "!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJ";
+	//char bin_quality[] = "!!''''''''000000000077777<<<<<BBBBBFFFFFII";
+
+	seq = kseq_init(fp);
+
+	memset(&last, 0, sizeof(kseq_t));
+	while (kseq_read(seq) >= 0) {
+		int i;
+		for (i = 0; i < seq->qual.l; ++i) {
+			char *p = strchr(base_quality, seq->qual.s[i]);
+			int pos = 42;
+			if (p != NULL) {
+				pos = p - base_quality;
+			}
+			seq->qual.s[i] = bin_quality[pos];
+		}
+		if (last.name.l) {
+			kstring_t *p = &last.name, *q = &seq->name;
+			int is_diff;
+			if (p->l == q->l) {
+				int l = (p->l > 2 && p->s[p->l-2] == '/' && q->s[q->l-2] == '/' && isdigit(p->s[p->l-1]) && isdigit(q->s[q->l-1]))? p->l - 2 : p->l;
+				is_diff = strncmp(p->s, q->s, l);
+			} else is_diff = 1;
+			if (!is_diff) {
+				stk_printseq(&last, 0);
+				stk_printseq(seq,   0);
+				last.name.l = 0;
+				++n;
+			} else {
+				stk_printseq(&last, 0);
+				++n;
+				cpy_kseq(&last, seq);
+			}
+		} else cpy_kseq(&last, seq);
+	}
+	if (last.name.l) stk_printseq(&last, 0);
+
+	kseq_destroy(seq);
+	gzclose(fp);
+	// free last!
+	return 0;
+}
+
+int stk_squeeze(int argc, char *argv[])
+{
+	gzFile fp;
+	//kseq_t *seq, last;
+	char *prefix = 0;
+	//uint64_t n = 1;
+
+	int c, keep_read_name = 0;
+	//char *bin_quality = 0;
+	char bin_quality[] = "!!''''''''000000000077777<<<<<BBBBBFFFFFII";
+	
+	while ((c = getopt(argc, argv, "p:k")) >= 0) {
+		switch (c) {
+			case 'k': keep_read_name = 1; break;
+			case 'p': prefix = optarg; break;
+		}
+	}
+
+	if (optind == argc) {
+		fprintf(stderr, "\n");
+		fprintf(stderr, "Usage:   seqtk sequeeze [options] <in.fq>\n");
+		fprintf(stderr, "Options: -p CHAR    prefix\n");
+		fprintf(stderr, "Options: -k         keep read name\n");
+		fprintf(stderr, "\n");
+		return 1;
+	}
+
+	if (argc == 1 && isatty(fileno(stdin))) {
+		fprintf(stderr, "Usage: seqtk rename <in.fq>\n");
+		return 1;
+	}
+	
+	fp = (strcmp(argv[optind], "-") == 0)? gzdopen(fileno(stdin), "r") : gzopen(argv[optind], "r");
+	if (fp == 0) {
+		fprintf(stderr, "[E::%s] failed to open the input file/stream.\n", __func__);
+		return 1;
+	}
+	
+	if (keep_read_name == 0) {
+		return sequeeze(fp, bin_quality, prefix);
+	} else {
+		return binning(fp, bin_quality);
+	}
+}
 
 /* main function */
 static int usage()
