@@ -192,7 +192,7 @@ static inline void stk_printseq_renamed(const kseq_t *s, int line_len, const cha
 		printf("%lld", (long long)n);
 	} else fputs(s->name.s, stdout);
 	if (s->comment.l) {
-		putchar(' '); fputs(s->comment.s, stdout);
+	//	putchar(' '); fputs(s->comment.s, stdout);
 	}
 	stk_printstr(&s->seq, line_len);
 	if (s->qual.l) {
